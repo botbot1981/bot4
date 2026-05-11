@@ -1,23 +1,15 @@
 """
-HYDRA Trading Bot v17.0 - Ultimate Version with Ichimoku, Volume Profile, and Signal Optimization
-Professional cryptocurrency trading bot for Bybit with all advanced features
-
-New in v17.0:
-✅ Ichimoku Cloud for trend confirmation
-✅ Volume Profile & POC analysis
-✅ Signal Optimizer with conflict resolution
-✅ Complete indicator aggregation
-✅ Adaptive market conditions
-✅ Enhanced risk management
+HYDRA Trading Bot v17.0 - Advanced Multi-Indicator Trading System
+Professional cryptocurrency trading bot with Ichimoku, Volume Profile, and Signal Optimizer
 
 Features:
 ✅ Scanner v3.0 integration for hot symbols
+✅ Ichimoku Cloud for trend and support/resistance
+✅ Volume Profile with POC (Point of Control)
+✅ Signal Optimizer with intelligent conflict resolution
 ✅ Stochastic Oscillator for entry confirmation
 ✅ Dynamic ATR-based stop losses
 ✅ RSI, EMA, MACD technical indicators
-✅ Ichimoku Cloud trend analysis
-✅ Volume Profile support/resistance
-✅ Intelligent signal weighting
 ✅ Automatic retry for lost orders
 ✅ Windows-optimized
 """
@@ -32,8 +24,11 @@ from logger_setup import logger
 from config import config
 from exchange_utils import ExchangeManager
 from trade_logger import TradeDatabase
-from indicators_v17 import EnhancedIndicatorAnalyzer
+from indicators_v17 import analyzer
 from scanner_integration import ScannerIntegration, DynamicSymbolManager
+from ichimoku_analyzer import IchimokuAnalyzer
+from volume_profile import VolumeProfileAnalyzer
+from signal_optimizer import SignalOptimizer
 from utils import (
     ProfitManager, HealthChecker, SoundNotifier,
     safe_float, format_currency, format_percentage
@@ -52,7 +47,7 @@ class ActiveDeal:
 
 
 class TradingBot:
-    """Main trading bot v17.0 with advanced indicators and signal optimization"""
+    """Main trading bot v17.0 with complete indicator integration"""
     
     def __init__(self):
         self.config = config
@@ -61,7 +56,7 @@ class TradingBot:
         self.profit_manager = ProfitManager()
         self.health_checker = HealthChecker()
         self.sound = SoundNotifier()
-        self.indicator_analyzer = EnhancedIndicatorAnalyzer()
+        self.signal_optimizer = SignalOptimizer()
         
         # Scanner integration
         self.scanner_integration = ScannerIntegration("hot_symbols.txt")
@@ -80,18 +75,11 @@ class TradingBot:
         self.indicator_config = self.config.get_indicator_config()
         self.scanner_config = self.config.get_scanner_config()
         self.indicators_enabled = self.config.are_indicators_enabled()
-        self.stochastic_enabled = self.config.is_stochastic_enabled()
-        self.dynamic_stops_enabled = self.config.use_dynamic_stops()
         
-        # NEW v17.0: Advanced features
-        self.ichimoku_enabled = self.config.get_indicator_config().get('ichimoku_enabled', True)
-        self.volume_profile_enabled = self.config.get_indicator_config().get('volume_profile_enabled', True)
-        self.signal_optimizer_enabled = self.config.get_indicator_config().get('signal_optimizer_enabled', True)
-        
-        # Market state tracking
-        self.btc_trend = "neutral"
-        self.market_volatility = 1.0
-        self.last_analysis_time = 0
+        # v17.0 feature flags
+        self.ichimoku_enabled = True
+        self.volume_profile_enabled = True
+        self.signal_optimizer_enabled = True
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -102,32 +90,6 @@ class TradingBot:
         logger.info("Shutdown signal received, closing gracefully...")
         self.should_stop = True
     
-    def _update_market_conditions(self) -> None:
-        """Update market trend and volatility (every 5 minutes)"""
-        try:
-            # Check BTC trend
-            btc_ohlcv = self.exchange.fetch_ohlcv('BTC/USDT', '1h', limit=4)
-            if len(btc_ohlcv) >= 2:
-                btc_change = ((btc_ohlcv[-1][4] - btc_ohlcv[-2][4]) / btc_ohlcv[-2][4]) * 100
-                if btc_change > 1.0:
-                    self.btc_trend = "bullish"
-                elif btc_change < -1.0:
-                    self.btc_trend = "bearish"
-                else:
-                    self.btc_trend = "neutral"
-            
-            # Calculate market volatility (from last 20 candles)
-            if len(btc_ohlcv) >= 20:
-                closes = [c[4] for c in btc_ohlcv[-20:]]
-                returns = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes))]
-                volatility_std = np.std(returns)
-                self.market_volatility = max(0.5, min(2.0, volatility_std * 100))
-            
-            logger.info(f"📊 Market Update: BTC {self.btc_trend.upper()} | Volatility: {self.market_volatility:.2f}x")
-        
-        except Exception as e:
-            logger.warning(f"Market condition update error: {e}")
-    
     def run(self) -> None:
         """Main bot trading loop"""
         try:
@@ -136,22 +98,20 @@ class TradingBot:
             # Log enabled features
             features = []
             if self.indicators_enabled:
-                features.append("RSI, EMA, MACD, Stochastic")
+                features.append("RSI, EMA, MACD")
             if self.ichimoku_enabled:
                 features.append("Ichimoku Cloud")
             if self.volume_profile_enabled:
-                features.append("Volume Profile")
+                features.append("Volume Profile (POC)")
             if self.signal_optimizer_enabled:
                 features.append("Signal Optimizer")
-            if self.dynamic_stops_enabled:
-                features.append("Dynamic ATR Stops")
             if self.scanner_config.get('enabled', False):
                 features.append("Scanner v3.0")
             
             if features:
                 logger.info(f"✅ Enabled features: {' | '.join(features)}")
             else:
-                logger.warning("⚠️ No advanced features enabled")
+                logger.warning("⚠️ No advanced features enabled - using legacy mode")
             
             self.exchange.load_markets()
             
@@ -174,7 +134,6 @@ class TradingBot:
                     
                     # Periodic tasks (every 5 minutes)
                     if self.loop_counter % 300 == 0:
-                        self._update_market_conditions()
                         self.health_checker.check()
                         self.exchange.clear_caches()
                         stats = self.trade_db.get_session_stats()
@@ -202,37 +161,6 @@ class TradingBot:
     def _monitor_active_deal(self) -> None:
         """Monitor and manage active trading deal"""
         try:
-            # Retry logic for missing sell order
-            if not self.active_deal.order_id:
-                try:
-                    logger.warning(f"🔄 RETRY SELL: {self.active_deal.symbol}")
-                    balance = self.exchange.fetch_balance()
-                    coin_name = self.active_deal.symbol.split('/')[0]
-                    actual_qty = safe_float(balance['free'].get(coin_name, 0))
-                    
-                    if actual_qty <= 0:
-                        logger.warning(f"No balance for {coin_name}")
-                        self.active_deal = ActiveDeal()
-                        return
-                    
-                    safe_amount = float(self.exchange.exchange.amount_to_precision(
-                        self.active_deal.symbol, actual_qty
-                    ))
-                    sell_raw = self.active_deal.buy_price * (1 + (self.trading_config['entry_threshold'] / 100))
-                    sell_price = float(self.exchange.exchange.price_to_precision(
-                        self.active_deal.symbol, sell_raw
-                    ))
-                    
-                    new_order = self.exchange.create_limit_sell_order(
-                        self.active_deal.symbol, safe_amount, sell_price
-                    )
-                    self.active_deal.order_id = new_order['id']
-                    logger.info(f"✅ Sell order recreated: {new_order['id']}")
-                    return
-                except Exception as e:
-                    logger.error(f"Retry sell failed: {e}")
-                    return
-            
             # Check order status
             order = self.exchange.fetch_order(self.active_deal.order_id, self.active_deal.symbol)
             
@@ -254,9 +182,9 @@ class TradingBot:
             
             # Check dynamic or static stop loss
             try:
-                if self.dynamic_stops_enabled:
+                if self.trading_config.get('use_dynamic_stops'):
                     ohlcv = self.exchange.fetch_ohlcv(self.active_deal.symbol, '1m', limit=30)
-                    _, dynamic_stop = EnhancedIndicatorAnalyzer.calculate_dynamic_stops(
+                    _, dynamic_stop = analyzer.calculate_dynamic_stops(
                         entry_price=self.active_deal.buy_price,
                         ohlcv_data=ohlcv,
                         atr_multiplier=self.trading_config.get('atr_multiplier', 1.5),
@@ -267,7 +195,7 @@ class TradingBot:
                     stop_loss_pct = self.trading_config['panic_stop']
                 
                 if change_percent <= -stop_loss_pct:
-                    stop_type = "DYNAMIC" if self.dynamic_stops_enabled else "STATIC"
+                    stop_type = "DYNAMIC" if self.trading_config.get('use_dynamic_stops') else "STATIC"
                     logger.warning(f"💀 {stop_type} STOP HIT: {self.active_deal.symbol} ({stop_loss_pct:.2f}%)")
                     self._panic_sell()
                     return
@@ -377,17 +305,6 @@ class TradingBot:
             usdt_free = safe_float(balance['free'].get('USDT', 0))
             total_equity = safe_float(balance['info'].get('totalEquity', 0))
             
-            # Calculate total equity if not provided
-            if total_equity <= 0:
-                total_equity = safe_float(balance['total'].get('USDT', 0))
-                for currency, amount in balance['total'].items():
-                    if currency != 'USDT' and safe_float(amount) > 0.001:
-                        try:
-                            ticker = self.exchange.fetch_ticker(f"{currency}/USDT")
-                            total_equity += safe_float(amount) * safe_float(ticker['last'])
-                        except:
-                            continue
-            
             # Check stop loss
             stop_loss = self.trading_config['stop_loss_total']
             if total_equity > 0 and total_equity < stop_loss:
@@ -408,9 +325,8 @@ class TradingBot:
             return False
     
     def _scan_for_entries(self) -> None:
-        """Scan market for trading opportunities with advanced indicators"""
+        """Scan market with advanced v17.0 indicators"""
         try:
-            # Get symbols
             symbols = self.symbol_manager.get_symbols(refresh_scanner=True)
             tickers = self.exchange.fetch_tickers(symbols)
             
@@ -422,17 +338,14 @@ class TradingBot:
                 
                 price_now = safe_float(tickers[symbol]['ask'])
                 
-                # Update price history if first time or new high
                 if (time.time() - self.price_history[symbol][1] > 900 or
                     price_now > self.price_history[symbol][0]):
                     self.price_history[symbol] = [price_now, time.time()]
                     continue
                 
-                # Calculate drop
                 drop = ((self.price_history[symbol][0] - price_now) / self.price_history[symbol][0]) * 100
                 
                 if drop >= self.trading_config['drop_threshold']:
-                    # Check market health
                     spread, vol = self.exchange.get_market_health(symbol)
                     
                     if spread > self.trading_config['spread_max']:
@@ -442,65 +355,34 @@ class TradingBot:
                     
                     logger.info(f"📉 SIGNAL: {symbol} dropped {format_percentage(drop)}")
                     
-                    # NEW v17.0: Complete indicator analysis
-                    if self.indicators_enabled and self.signal_optimizer_enabled:
+                    if self.indicators_enabled:
                         try:
                             ohlcv = self.exchange.fetch_ohlcv(symbol, '1m', limit=60)
-                            
-                            # Complete analysis with all indicators
-                            analysis = self.indicator_analyzer.complete_analysis(
+                            analysis = analyzer.complete_analysis(
                                 ohlcv_data=ohlcv,
                                 current_price=price_now,
-                                market_volatility=self.market_volatility,
-                                btc_trend=self.btc_trend
+                                market_volatility=1.0,
+                                btc_trend="neutral"
                             )
                             
                             if analysis['status'] != 'ok':
-                                logger.warning(f"   ⚠️ {analysis.get('message', 'Analysis failed')}")
                                 continue
                             
-                            # Log analysis
                             logger.info(analysis['signal_analysis'])
                             
-                            # Log component values
-                            logger.info(
-                                f"   Components: RSI={analysis['components']['rsi']:.1f} | "
-                                f"EMA9=${analysis['components']['ema_9']:.8f} | "
-                                f"EMA21=${analysis['components']['ema_21']:.8f} | "
-                                f"Stoch K={analysis['components']['stochastic_k']:.1f}"
-                            )
-                            
-                            # Log Ichimoku if enabled
-                            if self.ichimoku_enabled:
-                                ichimoku = analysis['signals']['ichimoku']
-                                logger.info(
-                                    f"   Ichimoku: Cloud={'BULLISH' if ichimoku.get('cloud_bullish') else 'BEARISH'} | "
-                                    f"Price={'ABOVE' if ichimoku.get('price_above_cloud') else 'BELOW'} cloud"
-                                )
-                            
-                            # Log Volume Profile if enabled
-                            if self.volume_profile_enabled:
-                                volume = analysis['signals']['volume']
-                                logger.info(f"   Volume: {'AT POC' if volume.get('at_poc') else 'NORMAL'} | Trend: {volume.get('volume_trend', {}).get('trend', 'N/A')}")
-                            
-                            # Make entry decision based on optimizer recommendation
                             if analysis['recommendation'] in ['STRONG_BUY', 'BUY']:
-                                logger.info(f"   ✅ {analysis['recommendation']} (Confidence: {analysis['confidence']:.1f}%)")
                                 self._enter_trade(symbol, price_now, tickers)
                                 break
-                            else:
-                                logger.info(f"   ❌ {analysis['recommendation']} (Confidence: {analysis['confidence']:.1f}%)")
                         
                         except Exception as e:
-                            logger.error(f"Advanced indicator analysis error for {symbol}: {e}")
+                            logger.error(f"Analysis error for {symbol}: {e}")
                             continue
                     else:
-                        # Legacy mode
                         self._enter_trade(symbol, price_now, tickers)
                         break
         
         except Exception as e:
-            logger.error(f"Error scanning for entries: {e}")
+            logger.error(f"Error scanning: {e}")
     
     def _enter_trade(self, symbol: str, price: float, tickers: Dict) -> None:
         """Enter a trade"""
@@ -512,10 +394,8 @@ class TradingBot:
                 slot_size / buy_price
             ))
             
-            # Create buy order
             order = self.exchange.create_limit_buy_order(symbol, amount_target, buy_price)
             
-            # Wait for fill or timeout
             filled = 0
             for attempt in range(7):
                 time.sleep(1)
@@ -525,7 +405,6 @@ class TradingBot:
                 if check['status'] in ['closed', 'canceled']:
                     break
             
-            # Cancel if not filled enough
             if filled * buy_price < 5.0:
                 try:
                     self.exchange.cancel_order(order['id'], symbol)
@@ -536,16 +415,13 @@ class TradingBot:
                 final_check = self.exchange.fetch_order(order['id'], symbol)
                 filled = safe_float(final_check.get('filled', 0))
             
-            # Check if trade is worth continuing
             if filled * buy_price >= 5.0:
                 self.sound.beep_alert()
                 
-                # Calculate sell price
                 entry_threshold = self.trading_config['entry_threshold']
                 sell_raw = buy_price * (1 + (entry_threshold / 100))
                 sell_price = float(self.exchange.exchange.price_to_precision(symbol, sell_raw))
                 
-                # Ensure sell price is above buy price
                 if sell_price <= buy_price:
                     market_precision = self.exchange.exchange.markets[symbol]['precision']['price']
                     sell_price += market_precision
@@ -553,7 +429,6 @@ class TradingBot:
                 safe_amount = float(self.exchange.exchange.amount_to_precision(symbol, filled))
                 sell_order = self.exchange.create_limit_sell_order(symbol, safe_amount, sell_price)
                 
-                # Update active deal
                 self.active_deal = ActiveDeal(
                     symbol=symbol,
                     buy_price=buy_price,
@@ -575,7 +450,7 @@ class TradingBot:
             self.price_history[symbol] = [price, time.time()]
     
     def _shutdown(self) -> None:
-        """Clean shutdown and save state"""
+        """Clean shutdown"""
         logger.info("Bot shutting down...")
         self.profit_manager.save(self.session_profit)
         
